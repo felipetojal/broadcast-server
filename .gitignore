@@ -1,0 +1,6 @@
+broadcast-server
+/vendor/
+*.exe
+*.dll
+*.so
+*.dylib
