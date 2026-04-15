@@ -7,26 +7,42 @@ import (
 	"log/slog"
 	"net"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"github.com/felipetojal/broadcast-server/logger"
 )
 
+// Struct to represent the server.
 type Server struct {
-	addr   string
-	port   string
+	// The address and port associated to the server.
+	addr string
+	port string
+
+	// The logger responsible for logging messages
+	// and possible errors.
 	logger *slog.Logger
-	conns  map[net.Conn]struct{}
-	mu     sync.RWMutex
+
+	// The server has a map of all active connections.
+	conns map[string](*Connection)
+
+	// The server has two channels. One channel
+	// is responsible for receiving the messages
+	// from the clients and the other is responsible
+	// for getting these messages and streaming them
+	// out to the other clients.
+	serverReceive chan []byte
+	serverSend    chan []byte
 }
 
+// Server constructor
 func NewServer(addr, port string, logger *slog.Logger) *Server {
 	return &Server{
-		addr:   addr,
-		port:   port,
-		logger: logger,
-		conns:  make(map[net.Conn]struct{}),
+		addr:          addr,
+		port:          port,
+		logger:        logger,
+		conns:         make(map[string](*Connection)),
+		serverReceive: make(chan []byte, 1024),
+		serverSend:    make(chan []byte, 1024),
 	}
 }
 
@@ -36,9 +52,9 @@ func Start(s *Server) error {
 	if err != nil {
 		return err
 	}
-
+	// Starting the server.
 	listen(l, s)
-
+	// If there is no error, return nil.
 	return nil
 }
 
@@ -50,10 +66,10 @@ func listen(l *net.Listener, s *Server) {
 	// the cancel() function will be executed
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-
 	// Dereferencing the pointer
 	lr := *l
 
+	// Goroutine to listen for syscalls.
 	go func() {
 		// Waiting for the context termination.
 		// (syscall)
@@ -67,6 +83,10 @@ func listen(l *net.Listener, s *Server) {
 		lr.Close()
 	}()
 
+	// 	Before the main loop, we need to spawn
+	// a function responsible for handling
+	// the server channels
+
 	// Core logic of the server. Here it will
 	// listen for external connections.
 loop:
@@ -79,10 +99,19 @@ loop:
 			logger.LogError(s.logger, err.Error())
 			continue
 		}
-
-		conn.Write([]byte("hello\n"))
 		logger.LogInfo(s.logger, "connection established: "+conn.RemoteAddr().String())
 
+		// Creating the Connection.
+		c := NewConnection(ctx, cancel, conn, s.serverReceive, s.serverSend)
+
+		// Adding the Connection.
+		addConn(s, c)
+
+		// Creating the go routine to handle
+		// each connection individually.
+		go func(con *Connection) {
+			Monitor(c)
+		}(c)
 	}
 }
 
@@ -95,10 +124,8 @@ func createListener(s *Server) (*net.Listener, error) {
 		logger.LogError(s.logger, err.Error())
 		return nil, err
 	}
-
 	// Logging the successful creation
 	logger.LogInfo(s.logger, "listener successfully created")
-
 	// Returning the listener
 	return &l, nil
 }
@@ -107,9 +134,18 @@ func createListener(s *Server) (*net.Listener, error) {
 // It will iterate over the connections and close each one.
 func closeConns(s *Server) {
 	logger.LogInfo(s.logger, "closing all conns.")
-	for k, _ := range s.conns {
-		fmt.Printf("Remote conn addr: %v\n", k.RemoteAddr())
-		k.Close()
+	for k, v := range s.conns {
+		fmt.Printf("Remote conn addr: %v\n", k)
+		closeConn(v)
 	}
 	logger.LogInfo(s.logger, "all conns were closed.")
+}
+
+// Function to add a new connection to the
+// server map.
+func addConn(s *Server, c *Connection) {
+	// Each connection will be associated to its
+	// remote address.
+	rAddr := c.conn.RemoteAddr().String()
+	s.conns[rAddr] = c
 }
