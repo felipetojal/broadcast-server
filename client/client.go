@@ -55,8 +55,9 @@ func establishConn(serverAddr string) {
 		log.Fatal("error conencting to server:" + serverAddr)
 	}
 
+	// This will receive signals from the terminal
+	// indicating exit.
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
 
 	// Creating the client.
 	c := newClient(ctx, cancel, conn)
@@ -65,6 +66,11 @@ func establishConn(serverAddr string) {
 	// be able to send and receive messages from
 	// the server.
 	go runClient(c)
+
+	// If the context is canceled, we can finish the
+	// function.
+	<-ctx.Done()
+	closeClient(c)
 }
 
 func runClient(c *Client) {
@@ -72,10 +78,32 @@ func runClient(c *Client) {
 	listenServer(c)
 }
 
+// This function will listen to the user
+// terminal, waiting for a message to be
+// written. Once it is written, it will
+// be sent to the server.
 func sendServer(c *Client) {
-	for {
+	// This is a blocking operation.
+	// It will wait until the user hits
+	// enter.
+	for c.scanner.Scan() {
+		msg := c.scanner.Bytes()
 
+		// Writing the message to the connection.
+		_, err := c.conn.Write(msg)
+		if err != nil {
+			log.Println("error sending message: ", string(msg))
+			// If an error happened, we call
+			// the context cancel.
+			c.cancel()
+			return
+		}
 	}
+
+	if err := c.scanner.Err(); err != nil {
+		log.Println("error reading stdin: ", err.Error())
+	}
+	c.cancel()
 }
 
 // This function will run in the background and will listen to the server
@@ -95,7 +123,7 @@ func listenServer(c *Client) {
 		}
 
 		msg := buf[:n]
-		fmt.Println("Received: ", msg)
+		fmt.Println("Received: ", string(msg))
 	}
 }
 
