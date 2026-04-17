@@ -48,7 +48,7 @@ func newClient(ctx context.Context, cancel context.CancelFunc, conn net.Conn) *C
 // to the server.
 //
 // If the connection fails, it will stop.
-func establishConn(serverAddr string) {
+func EstablishConn(serverAddr string) {
 	// Connecting to the server
 	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil {
