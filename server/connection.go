@@ -71,13 +71,13 @@ loop:
 		// Once the client closes the connection, the conn.Read()
 		// will return an io.EOF error.
 		if err != nil {
+			closeConn(c)
 			select {
 			// Signalling the server that the connection has been
 			// closed.
-			case serverDeleteConn <- c.conn.RemoteAddr().String():
 			case <-c.ctx.Done():
 				//Closing the connection
-				closeConn(c)
+			case serverDeleteConn <- c.conn.RemoteAddr().String():
 			}
 			break loop // Ending the function.
 		}
@@ -87,8 +87,13 @@ loop:
 		log.Printf("message received from %s: %s", c.conn.RemoteAddr().String(), msg)
 
 		// Sending the message to the server
-		serverReceive <- msg
-		log.Printf("message sent to serverReceive")
+		select {
+		case serverReceive <- msg:
+			log.Printf("message sent to serverReceive")
+		case <-c.ctx.Done():
+			// Se a conexão foi cancelada enquanto tentava enviar, apenas sai do loop
+			break loop
+		}
 	}
 }
 

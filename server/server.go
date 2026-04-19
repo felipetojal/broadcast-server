@@ -215,6 +215,7 @@ func sendMessage(s *Server, msg []byte) {
 	// Iterating over the map.
 	for _, v := range s.conns {
 		if v.status {
+			logger.LogInfo(s.logger, "message sent to: "+v.conn.RemoteAddr().String()+". Content: "+string(msg))
 			v.sendChan <- msg
 		}
 	}
@@ -236,10 +237,11 @@ func checkClosedConn(ctx context.Context, s *Server) {
 		// Since we are manipulating the connections map,
 		// we must lock it.
 		s.mu.Lock()
-		defer s.mu.Unlock()
 
 		// Deleting from the map.
 		delete(s.conns, rAddr)
+
+		s.mu.Unlock()
 	}
 }
 

@@ -74,8 +74,8 @@ func EstablishConn(serverAddr string) {
 }
 
 func runClient(c *Client) {
-	sendServer(c)
-	listenServer(c)
+	go sendServer(c)
+	go listenServer(c)
 }
 
 // This function will listen to the user
@@ -116,6 +116,7 @@ func listenServer(c *Client) {
 		// code flow will be stuck here.
 		n, err := c.conn.Read(buf)
 		if err != nil {
+			log.Println("error reading message from the server.", err)
 			// If there is an error reading,
 			// the connection will be closed.
 			c.cancel()
